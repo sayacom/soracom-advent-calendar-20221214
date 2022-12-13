@@ -1,0 +1,101 @@
+from m5stack import *
+from m5stack_ui import *
+from uiflow import *
+import json
+
+
+
+screen = M5Screen()
+screen.clean_screen()
+screen.set_screen_bg_color(0x34cdd7)
+
+
+update_tag_name = None
+update_tag_value = None
+dl_path = None
+http_results = None
+tag_request_body = None
+http_request_body = None
+temp = None
+script = None
+
+
+
+Title = M5Label('M5Stack x SIM7080G', x=35, y=10, color=0x000, font=FONT_MONT_22, parent=None)
+label0 = M5Label('Connection', x=0, y=75, color=0x000, font=FONT_MONT_18, parent=None)
+CONN = M5Label('$CONN', x=160, y=75, color=0x000, font=FONT_MONT_18, parent=None)
+label1 = M5Label('Tag(GET)', x=0, y=120, color=0x000, font=FONT_MONT_18, parent=None)
+GET_TAG = M5Label('$GET_TAG', x=160, y=120, color=0x000, font=FONT_MONT_18, parent=None)
+label3 = M5Label('Tag(PUT)', x=0, y=170, color=0x000, font=FONT_MONT_18, parent=None)
+PUT_TAG = M5Label('$PUT_TAG', x=160, y=170, color=0x000, font=FONT_MONT_18, parent=None)
+MSG = M5Label('MSG', x=0, y=220, color=0x000, font=FONT_MONT_14, parent=None)
+
+
+# Describe this function...
+def get_metadata_tags():
+  global update_tag_name, update_tag_value, dl_path, http_results, tag_request_body, http_request_body, temp, script
+  http_results = modem.http_request("GET", url='http://metadata.soracom.io', path='/v1/subscriber.tags', headers=None, params=None, body=None)
+  return json.loads((http_results['response']))
+
+# Describe this function...
+def update_sim_tag(update_tag_name, update_tag_value):
+  global dl_path, http_results, tag_request_body, http_request_body, temp, script
+  tag_request_body = []
+  tag_request_body.insert(0, {'tagName':update_tag_name,'tagValue':update_tag_value})
+  http_request_body = json.dumps(tag_request_body)
+  http_results = modem.http_request("PUT", url='http://metadata.soracom.io', path='/v1/subscriber/tags', headers={'Content-type':'application/json'}, params=None, body=http_request_body)
+  return http_results['status_code']
+
+# Describe this function...
+def dl_from_harvest_files(dl_path):
+  global update_tag_name, update_tag_value, http_results, tag_request_body, http_request_body, temp, script
+  http_results = modem.http_request("GET", url='http://harvest-files.soracom.io', path=dl_path, headers=None, params=None, body=None)
+  print((str('Download status: ') + str((http_results['status_code']))))
+  return http_results['response']
+
+
+
+CONN.set_text('...')
+GET_TAG.set_text('...')
+PUT_TAG.set_text('...')
+MSG.set_text('')
+rtc.datetime((22, 12, 14, 2, 0, 0, 0, 0))
+import machine
+from sim7080g import SIM7080G
+
+uart_modem = machine.UART(1, rx=13, tx=14)
+uart_modem.init(115200, bits=8, parity=None, stop=1)
+
+modem = SIM7080G(uart_modem)
+temp = modem.deactivate(0)
+if temp:
+  CONN.set_text('...')
+else:
+  CONN.set_text('ERR')
+modem.setAPN("soracom.io", "sora", "sora")
+temp = modem.activate(0)
+if temp:
+  CONN.set_text('OK')
+else:
+  CONN.set_text('ERR')
+print(modem.isNetworkActivated(0))
+temp = get_metadata_tags()
+print((str('[CURRENT SIM TAGS]') + str(temp)))
+if len(temp) != 0:
+  GET_TAG.set_text('OK')
+else:
+  GET_TAG.set_text('NG')
+temp = update_sim_tag('TAGS_FROM_DEVICE', str((rtc.printRTCtime())))
+print((str('[UPDATE SIM STATUS] ') + str(temp)))
+if temp == 200:
+  PUT_TAG.set_text('OK')
+else:
+  PUT_TAG.set_text('NG')
+script = dl_from_harvest_files('/uiflow/codes/unit-co2-demo.py').decode()
+print((str('[PYTHON SCRIPT]') + str(script)))
+if len(script) != 0:
+  MSG.set_text('Executing script...')
+else:
+  MSG.set_text('Failed to DL!!')
+print('Execute!')
+exec(script)
